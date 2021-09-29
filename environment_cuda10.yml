@@ -1,0 +1,20 @@
+name: UCaps
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.8
+  - pytorch=1.7.1=py3.8_cuda10.1.243_cudnn7.6.3_0
+  - torchaudio
+  - torchvision
+  - cudatoolkit=10.1.243
+  - pytorch-lightning
+  - pip
+  - pip:
+      - imageio==2.9.0
+      - importlib-metadata==4.0.1
+      - itk==5.2.0.post2
+      - matplotlib==3.4.1
+      - MedPy==0.4.0
+      - monai==0.6.0
+      - torchio==0.18.39
