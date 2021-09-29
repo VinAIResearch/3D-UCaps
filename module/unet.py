@@ -37,7 +37,7 @@ class UNetModule(pl.LightningModule):
         self.cls_loss = self.hparams.cls_loss
         self.class_weight = self.hparams.class_weight
 
-        #Defining losses
+        # Defining losses
         if self.cls_loss == "DiceCE":
             self.classification_loss = DiceCELoss(softmax=True, to_onehot_y=True, ce_weight=self.class_weight)
         elif self.cls_loss == "CE":
@@ -52,10 +52,10 @@ class UNetModule(pl.LightningModule):
         self.sw_batch_size = self.hparams.sw_batch_size
         self.overlap = self.hparams.overlap
 
-        #Building model
+        # Building model
         self.model = BasicUNet(in_channels=self.in_channels, out_channels=self.out_channels)
 
-        #For validation
+        # For validation
         self.post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=True, n_classes=self.out_channels)])
         self.post_label = Compose([EnsureType(), AsDiscrete(to_onehot=True, n_classes=self.out_channels)])
 
@@ -102,13 +102,21 @@ class UNetModule(pl.LightningModule):
         images, labels = batch["image"], batch["label"]
 
         val_outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
 
         # Visualize to tensorboard
         if self.global_rank == 0 and batch_idx == 0:
             plot_2d_or_3d_image(
-                images, step=self.global_step, writer=self.logger.experiment, max_channels=self.in_channels, tag="Input Image"
+                images,
+                step=self.global_step,
+                writer=self.logger.experiment,
+                max_channels=self.in_channels,
+                tag="Input Image",
             )
             plot_2d_or_3d_image(labels * 20, step=self.global_step, writer=self.logger.experiment, tag="Label")
             plot_2d_or_3d_image(
@@ -133,7 +141,11 @@ class UNetModule(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         images = batch["image"]
         outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
         return outputs
 

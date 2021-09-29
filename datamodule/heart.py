@@ -9,13 +9,13 @@ from monai.transforms import (
     CropForegroundd,
     DeleteItemsd,
     FgBgToIndicesd,
-    LoadImaged,
     LoadImage,
+    LoadImaged,
     Orientationd,
     RandCropByPosNegLabeld,
     ScaleIntensityd,
+    SpatialPadd,
     ToTensord,
-    SpatialPadd
 )
 
 
@@ -25,7 +25,7 @@ class HeartDecathlonDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        root_dir='.',
+        root_dir=".",
         fold=0,
         train_patch_size=(32, 32, 32),
         num_samples=32,
@@ -59,7 +59,7 @@ class HeartDecathlonDataModule(pl.LightningDataModule):
                     AddChanneld(keys=["image", "label"]),
                     Orientationd(keys=["image", "label"], axcodes="LPI"),
                     CropForegroundd(keys=["image", "label"], source_key="image", margin=0),
-                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode='edge'),
+                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode="edge"),
                     ScaleIntensityd(keys=["image"], minv=0.0, maxv=1.0),
                     FgBgToIndicesd(keys=["label"], image_key="image"),
                     RandCropByPosNegLabeld(
@@ -150,42 +150,43 @@ class HeartDecathlonDataModule(pl.LightningDataModule):
 
     def calculate_class_weight(self):
         data_dicts = load_decathlon_datalist(
-                os.path.join(self.base_dir, "dataset.json"), data_list_key="training", base_dir=self.base_dir
-            )
+            os.path.join(self.base_dir, "dataset.json"), data_list_key="training", base_dir=self.base_dir
+        )
 
         class_weight = []
         for data_dict in data_dicts:
-            label = LoadImage(reader="NibabelReader", image_only=True)(data_dict['label'])
-                    
+            label = LoadImage(reader="NibabelReader", image_only=True)(data_dict["label"])
+
             _, counts = np.unique(label, return_counts=True)
             counts = np.sum(counts) / counts
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_weight.append(counts)
 
         class_weight = np.asarray(class_weight)
-        class_weight = np.mean(class_weight, axis=0) 
-        print('Class weight: ' , class_weight)
+        class_weight = np.mean(class_weight, axis=0)
+        print("Class weight: ", class_weight)
 
     def calculate_class_percentage(self):
         data_dicts = load_decathlon_datalist(
-                os.path.join(self.base_dir, "dataset.json"), data_list_key="training", base_dir=self.base_dir
-            )
+            os.path.join(self.base_dir, "dataset.json"), data_list_key="training", base_dir=self.base_dir
+        )
 
         class_percentage = []
         for data_dict in data_dicts:
-            label = LoadImage(reader="NibabelReader", image_only=True)(data_dict['label'])
-                    
+            label = LoadImage(reader="NibabelReader", image_only=True)(data_dict["label"])
+
             _, counts = np.unique(label, return_counts=True)
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_percentage.append(counts)
 
         class_percentage = np.asarray(class_percentage)
-        class_percentage = np.mean(class_percentage, axis=0) 
-        print('Class Percentage: ' , class_percentage)
+        class_percentage = np.mean(class_percentage, axis=0)
+        print("Class Percentage: ", class_percentage)
+
 
 if __name__ == "__main__":
-    data_module = HeartDecathlonDataModule(root_dir='/home/ubuntu/Task02_Heart')
+    data_module = HeartDecathlonDataModule(root_dir="/home/ubuntu/Task02_Heart")
     # data_module.calculate_class_weight()
     data_module.calculate_class_percentage()

@@ -1,17 +1,17 @@
 from argparse import ArgumentParser
 
+import torch
 from datamodule.heart import HeartDecathlonDataModule
 from datamodule.hippocampus import HippocampusDecathlonDataModule
 from datamodule.iseg import ISeg2017DataModule
 from datamodule.luna import LUNA16DataModule
-from module.segcaps import SegCaps3D, SegCaps2D
+from module.segcaps import SegCaps2D, SegCaps3D
 from module.ucaps import UCaps3D
 from module.unet import UNetModule
 from monai.utils import set_determinism
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-import torch
 
 
 # Call example
@@ -26,10 +26,10 @@ if __name__ == "__main__":
     # Training options
     train_parser = parser.add_argument_group("Training config")
     train_parser.add_argument("--log_dir", type=str, default="/mnt/vinai/logs")
+    train_parser.add_argument("--model_name", type=str, default="ucaps", help="ucaps / segcaps-2d / segcaps-3d / unet")
     train_parser.add_argument(
-        "--model_name", type=str, default="ucaps", help="ucaps / segcaps-2d / segcaps-3d / unet"
+        "--dataset", type=str, default="iseg2017", help="iseg2017 / task02_heart / task04_hippocampus / luna16"
     )
-    train_parser.add_argument("--dataset", type=str, default="iseg2017", help="iseg2017 / task02_heart / task04_hippocampus / luna16")
     train_parser.add_argument("--train_patch_size", nargs="+", type=int, default=[32, 32, 32])
     train_parser.add_argument("--fold", type=int, default=0)
     train_parser.add_argument("--num_workers", type=int, default=4)
@@ -112,7 +112,9 @@ if __name__ == "__main__":
     if args.dataset == "iseg2017":
         tb_logger = TensorBoardLogger(save_dir=args.log_dir, name=f"{args.model_name}_{args.dataset}", log_graph=True)
     else:
-        tb_logger = TensorBoardLogger(save_dir=args.log_dir, name=f"{args.model_name}_{args.dataset}_{args.fold}", log_graph=True)
+        tb_logger = TensorBoardLogger(
+            save_dir=args.log_dir, name=f"{args.model_name}_{args.dataset}_{args.fold}", log_graph=True
+        )
     checkpoint_callback = ModelCheckpoint(
         filename="{epoch}-{val_dice:.4f}", monitor="val_dice", save_top_k=2, mode="max", save_last=True
     )
@@ -124,7 +126,7 @@ if __name__ == "__main__":
         logger=tb_logger,
         callbacks=[checkpoint_callback, earlystopping_callback],
         num_sanity_val_steps=1,
-        terminate_on_nan=True
+        terminate_on_nan=True,
     )
 
     trainer.fit(net, datamodule=data_module)

@@ -1,22 +1,21 @@
 from __future__ import absolute_import, division, print_function
 
 from collections import OrderedDict
-from monai.data import decollate_batch
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from layers import ConvSlimCapsule3D, ConvSlimCapsule2D, MarginLoss
+from layers import ConvSlimCapsule3D, MarginLoss
+from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from monai.networks import one_hot
 from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv
-from monai.transforms import AsDiscrete, Compose, EnsureType, SaveImage
+from monai.transforms import AsDiscrete, Compose, EnsureType
 from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 from torch import nn
-import numpy as np
 
 
 # Pytorch Lightning module
@@ -54,7 +53,7 @@ class UCaps3D(pl.LightningModule):
         self.rec_loss_weight = self.hparams.rec_loss_weight
         self.class_weight = self.hparams.class_weight
 
-        #Defining losses
+        # Defining losses
         self.classification_loss1 = MarginLoss(class_weight=self.class_weight, margin=0.2)
 
         if self.cls_loss == "DiceCE":
@@ -72,27 +71,69 @@ class UCaps3D(pl.LightningModule):
         self.sw_batch_size = self.hparams.sw_batch_size
         self.overlap = self.hparams.overlap
 
-        #Building model
-        self.feature_extractor = nn.Sequential(OrderedDict([
-            ('conv1', Convolution(dimensions=3, in_channels=self.in_channels, out_channels=16, kernel_size=5, strides=1, padding=2, bias=False)),
-            ('conv2', Convolution(dimensions=3, in_channels=16, out_channels=32, kernel_size=5, strides=1, dilation=2, padding=4, bias=False)),
-            ('conv3', Convolution(dimensions=3, in_channels=32, out_channels=64, kernel_size=5, strides=1, padding=4, dilation=2, bias=False, act='tanh'))
-        ]))
+        # Building model
+        self.feature_extractor = nn.Sequential(
+            OrderedDict(
+                [
+                    (
+                        "conv1",
+                        Convolution(
+                            dimensions=3,
+                            in_channels=self.in_channels,
+                            out_channels=16,
+                            kernel_size=5,
+                            strides=1,
+                            padding=2,
+                            bias=False,
+                        ),
+                    ),
+                    (
+                        "conv2",
+                        Convolution(
+                            dimensions=3,
+                            in_channels=16,
+                            out_channels=32,
+                            kernel_size=5,
+                            strides=1,
+                            dilation=2,
+                            padding=4,
+                            bias=False,
+                        ),
+                    ),
+                    (
+                        "conv3",
+                        Convolution(
+                            dimensions=3,
+                            in_channels=32,
+                            out_channels=64,
+                            kernel_size=5,
+                            strides=1,
+                            padding=4,
+                            dilation=2,
+                            bias=False,
+                            act="tanh",
+                        ),
+                    ),
+                ]
+            )
+        )
 
-        self.primary_caps = ConvSlimCapsule3D(kernel_size=3,
-                                            input_dim=1,
-                                            output_dim=16,
-                                            input_atoms=64,
-                                            output_atoms=4,
-                                            stride=1,
-                                            padding=1,
-                                            num_routing=1,
-                                            share_weight=self.share_weight)
+        self.primary_caps = ConvSlimCapsule3D(
+            kernel_size=3,
+            input_dim=1,
+            output_dim=16,
+            input_atoms=64,
+            output_atoms=4,
+            stride=1,
+            padding=1,
+            num_routing=1,
+            share_weight=self.share_weight,
+        )
         self._build_encoder()
         self._build_decoder()
         self._build_reconstruct_branch()
 
-        #For validation
+        # For validation
         self.post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=True, n_classes=self.out_channels)])
         self.post_label = Compose([EnsureType(), AsDiscrete(to_onehot=True, n_classes=self.out_channels)])
 
@@ -126,7 +167,7 @@ class UCaps3D(pl.LightningModule):
         return parent_parser, parser
 
     def forward(self, x):
-        #Contracting
+        # Contracting
         x = self.feature_extractor(x)
         x = x.unsqueeze(dim=1)
         conv_cap_1_1 = self.primary_caps(x)
@@ -149,7 +190,7 @@ class UCaps3D(pl.LightningModule):
         shape = conv_cap_1_1.size()
         conv_cap_1_1 = conv_cap_1_1.view(shape[0], -1, shape[-3], shape[-2], shape[-1])
 
-        #Expanding
+        # Expanding
         if self.connection == "skip":
             x = self.decoder_conv[0](conv_cap_4_1)
             x = torch.cat((x, conv_cap_3_1), dim=1)
@@ -167,7 +208,7 @@ class UCaps3D(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         images, labels = batch["image"], batch["label"]
 
-        #Contracting
+        # Contracting
         x = self.feature_extractor(images)
         x = x.unsqueeze(dim=1)
         conv_cap_1_1 = self.primary_caps(x)
@@ -181,7 +222,7 @@ class UCaps3D(pl.LightningModule):
         x = self.encoder_conv_caps[4](conv_cap_3_1)
         conv_cap_4_1 = self.encoder_conv_caps[5](x)
 
-        #Downsampled predictions
+        # Downsampled predictions
         norm = torch.linalg.norm(conv_cap_4_1, dim=2)
 
         shape = conv_cap_4_1.size()
@@ -193,7 +234,7 @@ class UCaps3D(pl.LightningModule):
         shape = conv_cap_1_1.size()
         conv_cap_1_1 = conv_cap_1_1.view(shape[0], -1, shape[-3], shape[-2], shape[-1])
 
-        #Expanding
+        # Expanding
         if self.connection == "skip":
             x = self.decoder_conv[0](conv_cap_4_1)
             x = torch.cat((x, conv_cap_3_1), dim=1)
@@ -206,10 +247,10 @@ class UCaps3D(pl.LightningModule):
 
         logits = self.decoder_conv[5](x)
 
-        #Reconstructing
+        # Reconstructing
         reconstructions = self.reconstruct_branch(x)
 
-        #Calculating losses
+        # Calculating losses
         loss, cls_loss, rec_loss = self.losses(images, labels, norm, logits, reconstructions)
 
         self.log("margin_loss", cls_loss[0], on_step=False, on_epoch=True, sync_dist=True)
@@ -222,13 +263,21 @@ class UCaps3D(pl.LightningModule):
         images, labels = batch["image"], batch["label"]
 
         val_outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
 
         # Visualize to tensorboard
         if self.global_rank == 0 and batch_idx == 0:
             plot_2d_or_3d_image(
-                images, step=self.global_step, writer=self.logger.experiment, max_channels=self.in_channels, tag="Input Image"
+                images,
+                step=self.global_step,
+                writer=self.logger.experiment,
+                max_channels=self.in_channels,
+                tag="Input Image",
             )
             plot_2d_or_3d_image(labels * 20, step=self.global_step, writer=self.logger.experiment, tag="Label")
             plot_2d_or_3d_image(
@@ -253,7 +302,11 @@ class UCaps3D(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         images = batch["image"]
         outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
         return outputs
 
@@ -300,19 +353,21 @@ class UCaps3D(pl.LightningModule):
                 input_atoms = self.encoder_output_atoms[i - 1]
 
             stride = 2 if i % 2 == 0 else 1
-            
-            self.encoder_conv_caps.append(ConvSlimCapsule3D(
-                                kernel_size=self.encoder_kernel_size,
-                                input_dim=input_dim,
-                                output_dim=self.encoder_output_dim[i],
-                                input_atoms=input_atoms,
-                                output_atoms=self.encoder_output_atoms[i],
-                                stride=stride,
-                                padding=1,
-                                dilation=1,
-                                num_routing=3,
-                                share_weight=self.share_weight
-            ))
+
+            self.encoder_conv_caps.append(
+                ConvSlimCapsule3D(
+                    kernel_size=self.encoder_kernel_size,
+                    input_dim=input_dim,
+                    output_dim=self.encoder_output_dim[i],
+                    input_atoms=input_atoms,
+                    output_atoms=self.encoder_output_atoms[i],
+                    stride=stride,
+                    padding=1,
+                    dilation=1,
+                    num_routing=3,
+                    share_weight=self.share_weight,
+                )
+            )
 
     def _build_decoder(self):
         self.decoder_conv = nn.ModuleList()
@@ -354,5 +409,5 @@ class UCaps3D(pl.LightningModule):
             nn.Conv3d(64, 128, 1),
             nn.ReLU(inplace=True),
             nn.Conv3d(128, self.in_channels, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )

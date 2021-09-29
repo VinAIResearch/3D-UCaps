@@ -4,9 +4,8 @@ from collections import OrderedDict
 
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
+from layers import ConvSlimCapsule2D, ConvSlimCapsule3D, DeconvSlimCapsule2D, DeconvSlimCapsule3D, MarginLoss
 from monai.data import decollate_batch
-from layers import ConvSlimCapsule3D, ConvSlimCapsule2D, DeconvSlimCapsule3D, DeconvSlimCapsule2D, MarginLoss
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
@@ -46,7 +45,7 @@ class SegCaps3D(pl.LightningModule):
         self.rec_loss_weight = self.hparams.rec_loss_weight
         self.class_weight = self.hparams.class_weight
 
-        #Defining losses
+        # Defining losses
         if self.cls_loss == "DiceCE":
             self.classification_loss = DiceCELoss(softmax=True, to_onehot_y=True, ce_weight=self.class_weight)
         elif self.cls_loss == "CE":
@@ -64,16 +63,33 @@ class SegCaps3D(pl.LightningModule):
         self.sw_batch_size = self.hparams.sw_batch_size
         self.overlap = self.hparams.overlap
 
-        #Building model
-        self.feature_extractor = nn.Sequential(OrderedDict([
-            ('conv1', Convolution(dimensions=3, in_channels=self.in_channels, out_channels=16, kernel_size=5, strides=1, padding=2, bias=True, conv_only=True, act='RELU'))
-        ]))
+        # Building model
+        self.feature_extractor = nn.Sequential(
+            OrderedDict(
+                [
+                    (
+                        "conv1",
+                        Convolution(
+                            dimensions=3,
+                            in_channels=self.in_channels,
+                            out_channels=16,
+                            kernel_size=5,
+                            strides=1,
+                            padding=2,
+                            bias=True,
+                            conv_only=True,
+                            act="RELU",
+                        ),
+                    )
+                ]
+            )
+        )
 
         self._build_encoder()
         self._build_decoder()
         self._build_reconstruct_branch()
 
-        #For validation
+        # For validation
         self.post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=True, n_classes=self.out_channels)])
         self.post_label = Compose([EnsureType(), AsDiscrete(to_onehot=True, n_classes=self.out_channels)])
 
@@ -104,7 +120,7 @@ class SegCaps3D(pl.LightningModule):
         return parent_parser, parser
 
     def forward(self, x):
-        #Contracting
+        # Contracting
         x = self.feature_extractor(x)
         conv_cap_1_1 = x.unsqueeze(dim=1)
 
@@ -117,7 +133,7 @@ class SegCaps3D(pl.LightningModule):
         x = self.encoder_conv_caps[4](conv_cap_3_1)
         conv_cap_4_1 = self.encoder_conv_caps[5](x)
 
-        #Expanding
+        # Expanding
         x = self.decoder_conv_caps[0](conv_cap_4_1)
         x = torch.cat((x, conv_cap_3_1), dim=1)
         x = self.decoder_conv_caps[1](x)
@@ -136,7 +152,7 @@ class SegCaps3D(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         images, labels = batch["image"], batch["label"]
 
-        #Contracting
+        # Contracting
         x = self.feature_extractor(images)
         conv_cap_1_1 = x.unsqueeze(dim=1)
 
@@ -149,7 +165,7 @@ class SegCaps3D(pl.LightningModule):
         x = self.encoder_conv_caps[4](conv_cap_3_1)
         conv_cap_4_1 = self.encoder_conv_caps[5](x)
 
-        #Expanding
+        # Expanding
         x = self.decoder_conv_caps[0](conv_cap_4_1)
         x = torch.cat((x, conv_cap_3_1), dim=1)
         x = self.decoder_conv_caps[1](x)
@@ -163,13 +179,13 @@ class SegCaps3D(pl.LightningModule):
 
         logits = torch.linalg.norm(x, dim=2)
 
-        #Reconstructing
+        # Reconstructing
         x_shape = x.size()
         masked_x = x * one_hot(labels, self.out_channels)[:, :, None, :, :, :]
         masked_x = masked_x.reshape(x_shape[0], -1, x_shape[-3], x_shape[-2], x_shape[-1])
         reconstructions = self.reconstruct_branch(masked_x)
 
-        #Calculating losses
+        # Calculating losses
         loss, cls_loss, rec_loss = self.losses(images, labels, logits, reconstructions)
         self.log(f"{self.cls_loss}_loss", cls_loss, on_step=False, on_epoch=True, sync_dist=True)
         self.log("reconstruction_loss", rec_loss, on_step=False, on_epoch=True, sync_dist=True)
@@ -180,13 +196,21 @@ class SegCaps3D(pl.LightningModule):
         images, labels = batch["image"], batch["label"]
 
         val_outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
 
         # Visualize to tensorboard
         if self.global_rank == 0 and batch_idx == 0:
             plot_2d_or_3d_image(
-                images, step=self.global_step, writer=self.logger.experiment, max_channels=self.in_channels, tag="Input Image"
+                images,
+                step=self.global_step,
+                writer=self.logger.experiment,
+                max_channels=self.in_channels,
+                tag="Input Image",
             )
             plot_2d_or_3d_image(labels * 20, step=self.global_step, writer=self.logger.experiment, tag="Label")
             plot_2d_or_3d_image(
@@ -247,19 +271,21 @@ class SegCaps3D(pl.LightningModule):
                 input_atoms = self.encoder_output_atoms[i - 1]
 
             stride = 2 if i % 2 == 0 else 1
-            
-            self.encoder_conv_caps.append(ConvSlimCapsule3D(
-                                kernel_size=self.encoder_kernel_size,
-                                input_dim=input_dim,
-                                output_dim=self.encoder_output_dim[i],
-                                input_atoms=input_atoms,
-                                output_atoms=self.encoder_output_atoms[i],
-                                stride=stride,
-                                padding=2,
-                                dilation=1,
-                                num_routing=3,
-                                share_weight=True
-            ))
+
+            self.encoder_conv_caps.append(
+                ConvSlimCapsule3D(
+                    kernel_size=self.encoder_kernel_size,
+                    input_dim=input_dim,
+                    output_dim=self.encoder_output_dim[i],
+                    input_atoms=input_atoms,
+                    output_atoms=self.encoder_output_atoms[i],
+                    stride=stride,
+                    padding=2,
+                    dilation=1,
+                    num_routing=3,
+                    share_weight=True,
+                )
+            )
 
     def _build_decoder(self):
         self.decoder_conv_caps = nn.ModuleList()
@@ -274,29 +300,33 @@ class SegCaps3D(pl.LightningModule):
                 input_atoms = self.decoder_output_atoms[i - 1]
 
             if i % 2 == 0:
-                self.decoder_conv_caps.append(DeconvSlimCapsule3D(
-                                            kernel_size=4,
-                                            input_dim=self.decoder_input_dim[i],
-                                            output_dim=self.decoder_output_dim[i],
-                                            input_atoms=input_atoms,
-                                            output_atoms=self.decoder_output_atoms[i],
-                                            stride=2,
-                                            padding=1,
-                                            num_routing=3,
-                                            share_weight=True
-                ))
+                self.decoder_conv_caps.append(
+                    DeconvSlimCapsule3D(
+                        kernel_size=4,
+                        input_dim=self.decoder_input_dim[i],
+                        output_dim=self.decoder_output_dim[i],
+                        input_atoms=input_atoms,
+                        output_atoms=self.decoder_output_atoms[i],
+                        stride=2,
+                        padding=1,
+                        num_routing=3,
+                        share_weight=True,
+                    )
+                )
             else:
-                self.decoder_conv_caps.append(ConvSlimCapsule3D(
-                                    kernel_size=5,
-                                    input_dim=self.decoder_input_dim[i],
-                                    output_dim=self.decoder_output_dim[i],
-                                    input_atoms=input_atoms,
-                                    output_atoms=self.decoder_output_atoms[i],
-                                    stride=1,
-                                    padding=2,
-                                    num_routing=3,
-                                    share_weight=True
-                ))
+                self.decoder_conv_caps.append(
+                    ConvSlimCapsule3D(
+                        kernel_size=5,
+                        input_dim=self.decoder_input_dim[i],
+                        output_dim=self.decoder_output_dim[i],
+                        input_atoms=input_atoms,
+                        output_atoms=self.decoder_output_atoms[i],
+                        stride=1,
+                        padding=2,
+                        num_routing=3,
+                        share_weight=True,
+                    )
+                )
 
     def _build_reconstruct_branch(self):
         self.reconstruct_branch = nn.Sequential(
@@ -305,8 +335,9 @@ class SegCaps3D(pl.LightningModule):
             nn.Conv3d(64, 128, 1),
             nn.ReLU(inplace=True),
             nn.Conv3d(128, self.in_channels, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
+
 
 class SegCaps2D(pl.LightningModule):
     def __init__(
@@ -338,7 +369,7 @@ class SegCaps2D(pl.LightningModule):
         self.rec_loss_weight = self.hparams.rec_loss_weight
         self.class_weight = self.hparams.class_weight
 
-        #Defining losses
+        # Defining losses
         if self.cls_loss == "DiceCE":
             self.classification_loss = DiceCELoss(softmax=True, to_onehot_y=True, ce_weight=self.class_weight)
         elif self.cls_loss == "CE":
@@ -356,16 +387,33 @@ class SegCaps2D(pl.LightningModule):
         self.sw_batch_size = self.hparams.sw_batch_size
         self.overlap = self.hparams.overlap
 
-        #Building model
-        self.feature_extractor = nn.Sequential(OrderedDict([
-            ('conv1', Convolution(dimensions=2, in_channels=self.in_channels, out_channels=16, kernel_size=5, strides=1, padding=2, bias=True, conv_only=True, act='RELU'))
-        ]))
+        # Building model
+        self.feature_extractor = nn.Sequential(
+            OrderedDict(
+                [
+                    (
+                        "conv1",
+                        Convolution(
+                            dimensions=2,
+                            in_channels=self.in_channels,
+                            out_channels=16,
+                            kernel_size=5,
+                            strides=1,
+                            padding=2,
+                            bias=True,
+                            conv_only=True,
+                            act="RELU",
+                        ),
+                    )
+                ]
+            )
+        )
 
         self._build_encoder()
         self._build_decoder()
         self._build_reconstruct_branch()
 
-        #For validation
+        # For validation
         self.post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=True, n_classes=self.out_channels)])
         self.post_label = Compose([EnsureType(), AsDiscrete(to_onehot=True, n_classes=self.out_channels)])
 
@@ -403,7 +451,7 @@ class SegCaps2D(pl.LightningModule):
         if self.input_dim == 3:
             x = x.squeeze(dim=-1)
 
-        #Contracting
+        # Contracting
         x = self.feature_extractor(x)
         conv_cap_1_1 = x.unsqueeze(dim=1)
 
@@ -416,7 +464,7 @@ class SegCaps2D(pl.LightningModule):
         x = self.encoder_conv_caps[4](conv_cap_3_1)
         conv_cap_4_1 = self.encoder_conv_caps[5](x)
 
-        #Expanding
+        # Expanding
         x = self.decoder_conv_caps[0](conv_cap_4_1)
         x = torch.cat((x, conv_cap_3_1), dim=1)
         x = self.decoder_conv_caps[1](x)
@@ -442,7 +490,7 @@ class SegCaps2D(pl.LightningModule):
             images = images.squeeze(dim=-1)
             labels = labels.squeeze(dim=-1)
 
-        #Contracting
+        # Contracting
         x = self.feature_extractor(images)
         conv_cap_1_1 = x.unsqueeze(dim=1)
 
@@ -455,7 +503,7 @@ class SegCaps2D(pl.LightningModule):
         x = self.encoder_conv_caps[4](conv_cap_3_1)
         conv_cap_4_1 = self.encoder_conv_caps[5](x)
 
-        #Expanding
+        # Expanding
         x = self.decoder_conv_caps[0](conv_cap_4_1)
         x = torch.cat((x, conv_cap_3_1), dim=1)
         x = self.decoder_conv_caps[1](x)
@@ -469,13 +517,13 @@ class SegCaps2D(pl.LightningModule):
 
         logits = torch.linalg.norm(x, dim=2)
 
-        #Reconstructing
+        # Reconstructing
         x_shape = x.size()
         masked_x = x * one_hot(labels, self.out_channels)[:, :, None, :, :]
         masked_x = masked_x.reshape(x_shape[0], -1, x_shape[-2], x_shape[-1])
         reconstructions = self.reconstruct_branch(masked_x)
 
-        #Calculating losses
+        # Calculating losses
         loss, cls_loss, rec_loss = self.losses(images, labels, logits, reconstructions)
         self.log(f"{self.cls_loss}_loss", cls_loss, on_step=False, on_epoch=True, sync_dist=True)
         self.log("reconstruction_loss", rec_loss, on_step=False, on_epoch=True, sync_dist=True)
@@ -486,13 +534,21 @@ class SegCaps2D(pl.LightningModule):
         images, labels = batch["image"], batch["label"]
 
         val_outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
 
         # Visualize to tensorboard
         if self.global_rank == 0 and batch_idx == 0:
             plot_2d_or_3d_image(
-                images, step=self.global_step, writer=self.logger.experiment, max_channels=self.in_channels, tag="Input Image"
+                images,
+                step=self.global_step,
+                writer=self.logger.experiment,
+                max_channels=self.in_channels,
+                tag="Input Image",
             )
             plot_2d_or_3d_image(labels * 20, step=self.global_step, writer=self.logger.experiment, tag="Label")
             plot_2d_or_3d_image(
@@ -517,7 +573,11 @@ class SegCaps2D(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         images = batch["image"]
         outputs = sliding_window_inference(
-            images, roi_size=self.val_patch_size, sw_batch_size=self.sw_batch_size, predictor=self.forward, overlap=self.overlap
+            images,
+            roi_size=self.val_patch_size,
+            sw_batch_size=self.sw_batch_size,
+            predictor=self.forward,
+            overlap=self.overlap,
         )
         return outputs
 
@@ -560,19 +620,21 @@ class SegCaps2D(pl.LightningModule):
                 input_atoms = self.encoder_output_atoms[i - 1]
 
             stride = 2 if i % 2 == 0 else 1
-            
-            self.encoder_conv_caps.append(ConvSlimCapsule2D(
-                                kernel_size=self.encoder_kernel_size,
-                                input_dim=input_dim,
-                                output_dim=self.encoder_output_dim[i],
-                                input_atoms=input_atoms,
-                                output_atoms=self.encoder_output_atoms[i],
-                                stride=stride,
-                                padding=2,
-                                dilation=1,
-                                num_routing=3,
-                                share_weight=True
-            ))
+
+            self.encoder_conv_caps.append(
+                ConvSlimCapsule2D(
+                    kernel_size=self.encoder_kernel_size,
+                    input_dim=input_dim,
+                    output_dim=self.encoder_output_dim[i],
+                    input_atoms=input_atoms,
+                    output_atoms=self.encoder_output_atoms[i],
+                    stride=stride,
+                    padding=2,
+                    dilation=1,
+                    num_routing=3,
+                    share_weight=True,
+                )
+            )
 
     def _build_decoder(self):
         self.decoder_conv_caps = nn.ModuleList()
@@ -587,29 +649,33 @@ class SegCaps2D(pl.LightningModule):
                 input_atoms = self.decoder_output_atoms[i - 1]
 
             if i % 2 == 0:
-                self.decoder_conv_caps.append(DeconvSlimCapsule2D(
-                                            kernel_size=4,
-                                            input_dim=self.decoder_input_dim[i],
-                                            output_dim=self.decoder_output_dim[i],
-                                            input_atoms=input_atoms,
-                                            output_atoms=self.decoder_output_atoms[i],
-                                            stride=2,
-                                            padding=1,
-                                            num_routing=3,
-                                            share_weight=True
-                ))
+                self.decoder_conv_caps.append(
+                    DeconvSlimCapsule2D(
+                        kernel_size=4,
+                        input_dim=self.decoder_input_dim[i],
+                        output_dim=self.decoder_output_dim[i],
+                        input_atoms=input_atoms,
+                        output_atoms=self.decoder_output_atoms[i],
+                        stride=2,
+                        padding=1,
+                        num_routing=3,
+                        share_weight=True,
+                    )
+                )
             else:
-                self.decoder_conv_caps.append(ConvSlimCapsule2D(
-                                    kernel_size=5,
-                                    input_dim=self.decoder_input_dim[i],
-                                    output_dim=self.decoder_output_dim[i],
-                                    input_atoms=input_atoms,
-                                    output_atoms=self.decoder_output_atoms[i],
-                                    stride=1,
-                                    padding=2,
-                                    num_routing=3,
-                                    share_weight=True
-                ))
+                self.decoder_conv_caps.append(
+                    ConvSlimCapsule2D(
+                        kernel_size=5,
+                        input_dim=self.decoder_input_dim[i],
+                        output_dim=self.decoder_output_dim[i],
+                        input_atoms=input_atoms,
+                        output_atoms=self.decoder_output_atoms[i],
+                        stride=1,
+                        padding=2,
+                        num_routing=3,
+                        share_weight=True,
+                    )
+                )
 
     def _build_reconstruct_branch(self):
         self.reconstruct_branch = nn.Sequential(
@@ -618,5 +684,5 @@ class SegCaps2D(pl.LightningModule):
             nn.Conv2d(64, 128, 1),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, self.in_channels, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )

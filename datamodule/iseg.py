@@ -7,21 +7,18 @@ from monai.data import CacheDataset, DataLoader, Dataset, PersistentDataset
 from monai.transforms import (
     AddChanneld,
     Compose,
-    CropForegroundd,
     DeleteItemsd,
     FgBgToIndicesd,
     Lambdad,
-    LoadImaged,
     LoadImage,
+    LoadImaged,
     MapLabelValued,
     Orientationd,
     RandCropByPosNegLabeld,
-    Rotated,
-    SaveImaged,
     ScaleIntensityRanged,
+    SpatialPadd,
     ToTensord,
     Transpose,
-    SpatialPadd
 )
 
 
@@ -31,7 +28,7 @@ class ISeg2017DataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        root_dir='.',
+        root_dir=".",
         train_patch_size=(32, 32, 32),
         num_samples=32,
         batch_size=1,
@@ -68,8 +65,8 @@ class ISeg2017DataModule(pl.LightningDataModule):
                     MapLabelValued(
                         keys=["label"], orig_labels=[0, 10, 150, 250], target_labels=[0, 1, 2, 3], dtype=np.float32
                     ),
-                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode='edge'),
-                    ScaleIntensityRanged(keys=['image'], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
+                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode="edge"),
+                    ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
                     FgBgToIndicesd(keys=["label"]),
                     RandCropByPosNegLabeld(
                         keys=["image", "label"],
@@ -96,7 +93,7 @@ class ISeg2017DataModule(pl.LightningDataModule):
                     Lambdad(keys=["image", "label"], func=Transpose((0, 3, 2, 1))),
                     Orientationd(keys=["image", "label"], axcodes="RAI"),
                     MapLabelValued(keys=["label"], orig_labels=[0, 10, 150, 250], target_labels=[0, 1, 2, 3]),
-                    ScaleIntensityRanged(keys=['image'], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
+                    ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
                     ToTensord(keys=["image", "label"]),
                 ]
             )
@@ -148,9 +145,7 @@ class ISeg2017DataModule(pl.LightningDataModule):
                 self.trainset = Dataset(data=train_data_dicts, transform=self.train_transforms)
                 self.valset = Dataset(data=val_data_dicts, transform=self.val_transforms)
         elif stage == "validate":
-            val_data_dicts = self._load_data_dicts(
-                os.path.join(self.root_dir, "domainA_val")
-            )
+            val_data_dicts = self._load_data_dicts(os.path.join(self.root_dir, "domainA_val"))
             self.valset = CacheDataset(
                 data=val_data_dicts, transform=self.val_transforms, cache_rate=1.0, num_workers=4
             )
@@ -168,32 +163,33 @@ class ISeg2017DataModule(pl.LightningDataModule):
         class_weight = []
         for label_name in sorted(glob.glob(os.path.join(self.root_dir, "domainA", "*label.hdr"))):
             label = LoadImage(reader="ITKReader", image_only=True)(label_name)
-                    
+
             _, counts = np.unique(label, return_counts=True)
             counts = np.sum(counts) / counts
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_weight.append(counts)
 
         class_weight = np.asarray(class_weight)
-        class_weight = np.mean(class_weight, axis=0) 
-        print('Class weight: ' , class_weight)
+        class_weight = np.mean(class_weight, axis=0)
+        print("Class weight: ", class_weight)
 
     def calculate_class_percentage(self):
         class_percentage = []
         for label_name in sorted(glob.glob(os.path.join(self.root_dir, "domainA", "*label.hdr"))):
             label = LoadImage(reader="ITKReader", image_only=True)(label_name)
-                    
+
             _, counts = np.unique(label, return_counts=True)
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_percentage.append(counts)
 
         class_percentage = np.asarray(class_percentage)
-        class_percentage = np.mean(class_percentage, axis=0) 
-        print('Class Percentage: ' , class_percentage)
+        class_percentage = np.mean(class_percentage, axis=0)
+        print("Class Percentage: ", class_percentage)
+
 
 if __name__ == "__main__":
-    data_module = ISeg2017DataModule(root_dir='/home/ubuntu/')
+    data_module = ISeg2017DataModule(root_dir="/home/ubuntu/")
     # data_module.calculate_class_weight()
     data_module.calculate_class_percentage()

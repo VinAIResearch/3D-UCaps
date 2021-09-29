@@ -3,16 +3,16 @@ import argparse
 import numpy as np
 import torch
 from datamodule.iseg import ISeg2017DataModule
+from module.segcaps import SegCaps2D, SegCaps3D
 from module.ucaps import UCaps3D
 from module.unet import UNetModule
-from module.segcaps import SegCaps3D, SegCaps2D
 from monai.data import NiftiSaver, decollate_batch
-from monai.inferers import sliding_window_inference
-from monai.metrics import DiceMetric, ConfusionMatrixMetric
-from monai.transforms import (
+from monai.metrics import ConfusionMatrixMetric, DiceMetric
+from monai.transforms import (  # GibbsNoised,
     AddChanneld,
     AsDiscrete,
     Compose,
+    EnsureType,
     Lambdad,
     LoadImaged,
     MapLabelValue,
@@ -20,23 +20,24 @@ from monai.transforms import (
     Orientationd,
     Rotated,
     ScaleIntensityRanged,
+    ToNumpyd,
     ToTensord,
     Transpose,
-    ToNumpyd,
-    GibbsNoised,
-    EnsureType
 )
 from monai.utils import set_determinism
-from torchio.transforms import RandomMotion, RandomGhosting, RandomSpike, RandomBiasField
-from tqdm import tqdm
 from pytorch_lightning import Trainer
+
+# from torchio.transforms import RandomBiasField, RandomGhosting, RandomMotion, RandomSpike
+from tqdm import tqdm
+
 
 def print_metric(metric_name, scores):
     mean_score = np.mean(scores)
     print("-------------------------------")
     print("Validation {} score mean: {:4f}".format(metric_name, mean_score))
     for i, score in enumerate(scores):
-        print('Validation {} score class {}: {:4f}'.format(metric_name, i + 1, score))
+        print("Validation {} score class {}: {:4f}".format(metric_name, i + 1, score))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -48,9 +49,7 @@ if __name__ == "__main__":
     # Validation config
     val_parser = parser.add_argument_group("Validation config")
     val_parser.add_argument("--output_dir", type=str, default="/root")
-    val_parser.add_argument(
-        "--model_name", type=str, default="ucaps", help="ucaps / segcaps-2d / segcaps-3d / unet"
-    )
+    val_parser.add_argument("--model_name", type=str, default="ucaps", help="ucaps / segcaps-2d / segcaps-3d / unet")
     val_parser.add_argument(
         "--checkpoint_path", type=str, default="", help='/path/to/trained_model. Set to "" for none.'
     )
@@ -109,15 +108,13 @@ if __name__ == "__main__":
             Orientationd(keys=["image", "label"], axcodes="RAI"),
             rotate_transform,
             # GibbsNoised(keys=['image'], alpha=0.5, as_tensor_output=True),
-            ToTensord(keys=['image']),
+            ToTensord(keys=["image"]),
             # RandomMotion(keys=["image"], image_interpolation='bspline'),
             # RandomGhosting(keys=["image"]),
             # RandomSpike(keys=['image']),
             # RandomBiasField(keys=['image']),
-            ToNumpyd(keys=['image']),
-
-            ScaleIntensityRanged(keys=['image'], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
-            
+            ToNumpyd(keys=["image"]),
+            ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=1000.0, b_min=0.0, b_max=1.0, clip=True),
             MapLabelValued(
                 keys=["label"], orig_labels=[0, 10, 150, 250], target_labels=[0, 1, 2, 3], dtype=np.float32
             ),
@@ -135,21 +132,41 @@ if __name__ == "__main__":
 
     if args.checkpoint_path != "":
         if args.model_name == "ucaps":
-            net = UCaps3D.load_from_checkpoint(args.checkpoint_path, val_patch_size=args.val_patch_size, sw_batch_size=args.sw_batch_size, overlap=args.overlap)
+            net = UCaps3D.load_from_checkpoint(
+                args.checkpoint_path,
+                val_patch_size=args.val_patch_size,
+                sw_batch_size=args.sw_batch_size,
+                overlap=args.overlap,
+            )
         elif args.model_name == "unet":
-            net = UNetModule.load_from_checkpoint(args.checkpoint_path, val_patch_size=args.val_patch_size, sw_batch_size=args.sw_batch_size, overlap=args.overlap)
+            net = UNetModule.load_from_checkpoint(
+                args.checkpoint_path,
+                val_patch_size=args.val_patch_size,
+                sw_batch_size=args.sw_batch_size,
+                overlap=args.overlap,
+            )
         elif args.model_name == "segcaps-2d":
-            net = SegCaps2D.load_from_checkpoint(args.checkpoint_path, val_patch_size=args.val_patch_size, sw_batch_size=args.sw_batch_size, overlap=args.overlap)
+            net = SegCaps2D.load_from_checkpoint(
+                args.checkpoint_path,
+                val_patch_size=args.val_patch_size,
+                sw_batch_size=args.sw_batch_size,
+                overlap=args.overlap,
+            )
         elif args.model_name == "segcaps-3d":
-            net = SegCaps3D.load_from_checkpoint(args.checkpoint_path, val_patch_size=args.val_patch_size, sw_batch_size=args.sw_batch_size, overlap=args.overlap)
+            net = SegCaps3D.load_from_checkpoint(
+                args.checkpoint_path,
+                val_patch_size=args.val_patch_size,
+                sw_batch_size=args.sw_batch_size,
+                overlap=args.overlap,
+            )
         print("Load trained model!!!")
 
-    #Prediction
+    # Prediction
 
     trainer = Trainer.from_argparse_args(args)
     outputs = trainer.predict(net, dataloaders=val_loader)
 
-    #Calculate metric and visualize
+    # Calculate metric and visualize
 
     n_classes = net.out_channels
     post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=True, n_classes=n_classes)])
@@ -180,8 +197,20 @@ if __name__ == "__main__":
     )
 
     dice_metric = DiceMetric(include_background=False, reduction="mean_batch", get_not_nans=False)
-    precision_metric = ConfusionMatrixMetric(include_background=False, metric_name='precision', compute_sample=True, reduction='mean_batch', get_not_nans=False)
-    sensitivity_metric = ConfusionMatrixMetric(include_background=False, metric_name='sensitivity', compute_sample=True, reduction='mean_batch', get_not_nans=False)
+    precision_metric = ConfusionMatrixMetric(
+        include_background=False,
+        metric_name="precision",
+        compute_sample=True,
+        reduction="mean_batch",
+        get_not_nans=False,
+    )
+    sensitivity_metric = ConfusionMatrixMetric(
+        include_background=False,
+        metric_name="sensitivity",
+        compute_sample=True,
+        reduction="mean_batch",
+        get_not_nans=False,
+    )
 
     for i, data in enumerate(tqdm(val_loader)):
         if args.save_image:
@@ -223,10 +252,10 @@ if __name__ == "__main__":
         precision_metric(y_pred=val_outputs, y=labels)
         sensitivity_metric(y_pred=val_outputs, y=labels)
 
-    print_metric('dice', dice_metric.aggregate().cpu().numpy())
+    print_metric("dice", dice_metric.aggregate().cpu().numpy())
 
-    print_metric('precision', precision_metric.aggregate()[0].cpu().numpy())
+    print_metric("precision", precision_metric.aggregate()[0].cpu().numpy())
 
-    print_metric('sensitivity', sensitivity_metric.aggregate()[0].cpu().numpy())
+    print_metric("sensitivity", sensitivity_metric.aggregate()[0].cpu().numpy())
 
     print("Finished Evaluation")

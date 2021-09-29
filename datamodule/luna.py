@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 import pytorch_lightning as pl
-from monai.data import CacheDataset, DataLoader, Dataset, PersistentDataset, dataloader, partition_dataset
+from monai.data import CacheDataset, DataLoader, Dataset, PersistentDataset, partition_dataset
 from monai.transforms import (
     AddChanneld,
     Compose,
@@ -11,15 +11,15 @@ from monai.transforms import (
     DeleteItemsd,
     FgBgToIndicesd,
     Lambdad,
-    LoadImaged,
     LoadImage,
+    LoadImaged,
     MapLabelValued,
     Orientationd,
     RandCropByPosNegLabeld,
     ScaleIntensityRanged,
+    SpatialPadd,
     ToTensord,
     Transpose,
-    SpatialPadd
 )
 
 
@@ -29,7 +29,7 @@ class LUNA16DataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        root_dir='.',
+        root_dir=".",
         fold=0,
         train_patch_size=(32, 32, 32),
         num_samples=32,
@@ -68,7 +68,7 @@ class LUNA16DataModule(pl.LightningDataModule):
                     ),
                     ScaleIntensityRanged(keys=["image"], a_min=-1024, a_max=3072, b_min=0.0, b_max=1.0, clip=True),
                     CropForegroundd(keys=["image", "label"], source_key="image", margin=0),
-                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode='edge'),
+                    SpatialPadd(keys=["image", "label"], spatial_size=train_patch_size, mode="edge"),
                     FgBgToIndicesd(keys=["label"], image_key="image"),
                     RandCropByPosNegLabeld(
                         keys=["image", "label"],
@@ -106,14 +106,11 @@ class LUNA16DataModule(pl.LightningDataModule):
             self.val_transforms = val_transforms
 
     def _load_data_dicts(self, train=True):
-        images = sorted(glob.glob(os.path.join(self.root_dir, 'imgs', "*.mhd")))
+        images = sorted(glob.glob(os.path.join(self.root_dir, "imgs", "*.mhd")))
 
         if train:
             labels = sorted(glob.glob(os.path.join(self.root_dir, "segs", "*.mhd")))
-            data_dicts = [
-                {"image": img_name, "label": label_name}
-                for img_name, label_name in zip(images, labels)
-            ]
+            data_dicts = [{"image": img_name, "label": label_name} for img_name, label_name in zip(images, labels)]
             data_dicts_list = partition_dataset(data_dicts, num_partitions=4, shuffle=True, seed=0)
             train_dicts, val_dicts = [], []
             for i, data_dict in enumerate(data_dicts_list):
@@ -138,7 +135,10 @@ class LUNA16DataModule(pl.LightningDataModule):
                     num_workers=self.num_workers,
                 )
                 self.valset = CacheDataset(
-                    data=val_data_dicts, transform=self.val_transforms, cache_rate=self.cache_rate, num_workers=self.num_workers
+                    data=val_data_dicts,
+                    transform=self.val_transforms,
+                    cache_rate=self.cache_rate,
+                    num_workers=self.num_workers,
                 )
             elif self.cache_dir is not None:
                 self.trainset = PersistentDataset(
@@ -153,7 +153,10 @@ class LUNA16DataModule(pl.LightningDataModule):
         elif stage == "validate":
             _, val_data_dicts = self._load_data_dicts()
             self.valset = CacheDataset(
-                data=val_data_dicts, transform=self.val_transforms, cache_rate=self.cache_rate, num_workers=self.num_workers
+                data=val_data_dicts,
+                transform=self.val_transforms,
+                cache_rate=self.cache_rate,
+                num_workers=self.num_workers,
             )
 
     def train_dataloader(self):
@@ -169,38 +172,45 @@ class LUNA16DataModule(pl.LightningDataModule):
         class_weight = []
         for label_name in sorted(glob.glob(os.path.join(self.root_dir, "segs", "*.mhd"))):
             label = LoadImage(reader="ITKReader", image_only=True)(label_name)
-            #Trachea
+            # Trachea
             label[label == 5] = 0
             label[label > 1] = 1
-                    
+
             _, counts = np.unique(label, return_counts=True)
             counts = np.sum(counts) / counts
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_weight.append(counts)
 
         class_weight = np.asarray(class_weight)
-        class_weight = np.mean(class_weight, axis=0) 
-        print('Class weight: ' , class_weight)
+        class_weight = np.mean(class_weight, axis=0)
+        print("Class weight: ", class_weight)
 
     def calculate_class_percentage(self):
         class_percentage = []
         for label_name in sorted(glob.glob(os.path.join(self.root_dir, "segs", "*.mhd"))):
             label = LoadImage(reader="ITKReader", image_only=True)(label_name)
-            #Trachea
+            # Trachea
             label[label == 5] = 0
             label[label > 1] = 1
 
             _, counts = np.unique(label, return_counts=True)
-            #Normalize
+            # Normalize
             counts = counts / np.sum(counts)
             class_percentage.append(counts)
 
         class_percentage = np.asarray(class_percentage)
-        class_percentage = np.mean(class_percentage, axis=0) 
-        print('Class Percentage: ' , class_percentage)
+        class_percentage = np.mean(class_percentage, axis=0)
+        print("Class Percentage: ", class_percentage)
+
 
 if __name__ == "__main__":
-    data_module = LUNA16DataModule(root_dir='/home/ubuntu/', train_patch_size=[96,96,96], num_samples=2, batch_size=1, cache_dir='/home/ubuntu/cache_dir')
+    data_module = LUNA16DataModule(
+        root_dir="/home/ubuntu/",
+        train_patch_size=[96, 96, 96],
+        num_samples=2,
+        batch_size=1,
+        cache_dir="/home/ubuntu/cache_dir",
+    )
     # data_module.calculate_class_weight()
     # data_module.calculate_class_percentage()

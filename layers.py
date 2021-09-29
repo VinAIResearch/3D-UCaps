@@ -6,13 +6,9 @@ Tensorflow source: https://github.com/Sarasra/models/tree/master/research/capsul
 
 from __future__ import absolute_import, division, print_function
 
-from math import floor
-
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.nn.modules import activation
 
 
 def _squash(input_tensor, dim=2):
@@ -64,6 +60,7 @@ def _update_routing(votes, biases, num_routing):
             activation = _squash(preactivate)
     return activation
 
+
 class DepthwiseConv3d(nn.Module):
     """
     Performs 2D convolution given a 5D input tensor.
@@ -88,7 +85,16 @@ class DepthwiseConv3d(nn.Module):
     """
 
     def __init__(
-        self, kernel_size, input_dim, output_dim, input_atoms=8, output_atoms=8, stride=2, dilation=1, padding=0, share_weight=True
+        self,
+        kernel_size,
+        input_dim,
+        output_dim,
+        input_atoms=8,
+        output_atoms=8,
+        stride=2,
+        dilation=1,
+        padding=0,
+        share_weight=True,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -98,7 +104,9 @@ class DepthwiseConv3d(nn.Module):
         self.share_weight = share_weight
 
         if self.share_weight:
-            self.conv2d = nn.Conv2d(input_atoms, output_dim * output_atoms, kernel_size, stride=stride, dilation=dilation, padding=padding)
+            self.conv2d = nn.Conv2d(
+                input_atoms, output_dim * output_atoms, kernel_size, stride=stride, dilation=dilation, padding=padding
+            )
         else:
             self.conv2d = nn.Conv2d(
                 input_dim * input_atoms,
@@ -182,7 +190,15 @@ class ConvSlimCapsule2D(nn.Module):
         self.num_routing = num_routing
         self.biases = nn.Parameter(torch.nn.init.constant_(torch.empty(output_dim, output_atoms, 1, 1), 0.1))
         self.depthwise_conv3d = DepthwiseConv3d(
-            kernel_size=kernel_size, input_dim=input_dim, output_dim=output_dim, input_atoms=input_atoms, output_atoms=output_atoms, stride=stride, dilation=dilation, padding=padding, share_weight=share_weight
+            kernel_size=kernel_size,
+            input_dim=input_dim,
+            output_dim=output_dim,
+            input_atoms=input_atoms,
+            output_atoms=output_atoms,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+            share_weight=share_weight,
         )
 
     def forward(self, input_tensor):
@@ -331,7 +347,16 @@ class DepthwiseConv4d(nn.Module):
     """
 
     def __init__(
-        self, kernel_size, input_dim, output_dim, input_atoms=8, output_atoms=8, stride=2, dilation=1, padding=0, share_weight=True
+        self,
+        kernel_size,
+        input_dim,
+        output_dim,
+        input_atoms=8,
+        output_atoms=8,
+        stride=2,
+        dilation=1,
+        padding=0,
+        share_weight=True,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -341,10 +366,23 @@ class DepthwiseConv4d(nn.Module):
         self.share_weight = share_weight
 
         if self.share_weight:
-            self.conv3d = nn.Conv3d(input_atoms, output_dim * output_atoms, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding)
+            self.conv3d = nn.Conv3d(
+                input_atoms,
+                output_dim * output_atoms,
+                kernel_size=kernel_size,
+                stride=stride,
+                dilation=dilation,
+                padding=padding,
+            )
         else:
             self.conv3d = nn.Conv3d(
-                input_dim * input_atoms, input_dim * output_dim * output_atoms, kernel_size=kernel_size, stride=stride, dilation=dilation, padding=padding, groups=input_dim
+                input_dim * input_atoms,
+                input_dim * output_dim * output_atoms,
+                kernel_size=kernel_size,
+                stride=stride,
+                dilation=dilation,
+                padding=padding,
+                groups=input_dim,
             )
         torch.nn.init.normal_(self.conv3d.weight, std=0.1)
 
