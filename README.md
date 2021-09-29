@@ -164,3 +164,6 @@ bash scripts/evaluate_rotation.sh 0 z
 ```
 python val.py --gpu 1 --sw_batch_size 32 --overlap 0.75 --output_dir=/home/ubuntu/
 ```
+
+## Acknowlegement
+The implementation of dynamic routing algorithm and capsule layers were based on the tensorflow build of CapsNet by its authors in this [link](https://github.com/Sarasra/models/tree/master/research/capsules)
