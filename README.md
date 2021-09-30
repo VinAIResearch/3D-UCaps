@@ -4,7 +4,7 @@
 
 # 3D-UCaps: 3D Capsules Unet for Volumetric Image Segmentation
 
-3D-UCaps is a voxel-based Capsule network for medical image segmentation. Our architecture based on the symmetry U-net with two parts: the encoder forms by Capsule layers, whereas the decoder contains traditional convolutional layers. 3D-UCaps, therefore inherits the merits from both Capsule network to preserve the part-to-whole relationship and CNNs to learn translational invariant representation. We conducted experiments on various datasets (including iSeg-2017, LUNA16, Hippocampus, and Cardiac) to demonstrate the superior performance of 3D-UCaps, where our method outperforms the baseline method SegCaps while being more robust against rotational transformation when compared to 3D-Unet.
+3D-UCaps is a voxel-based Capsule network for medical image segmentation. Our architecture is based on the symmetry U-net with two parts: the encoder forms by Capsule layers, whereas the decoder contains traditional convolutional layers. 3D-UCaps, therefore inherits the merits from both Capsule networks to preserve the part-to-whole relationship and CNNs to learn translational invariant representation. We conducted experiments on various datasets (including iSeg-2017, LUNA16, Hippocampus, and Cardiac) to demonstrate the superior performance of 3D-UCaps, where our method outperforms the baseline method [SegCaps](https://github.com/lalonderodney/SegCaps) while being more robust against rotational transformation when compared to 3D-Unet.
 
 ![alt text](imgs/model.png "UCaps architecture")
 
@@ -32,7 +32,7 @@ Details of the UCaps model architecture and experimental results can be found in
 | 3D-UCaps | **95.01** | **91.51** | 90.59 | **92.37** | [download](https://drive.google.com/file/d/1mjMsMUltTikw8HW2IwRqG5s9pEsmwKVo/view?usp=sharing) |
 | Paper | 94.21 | 91.34 | **90.95** | 92.17 | |
 
-### Dice Coefficient of 3D-UCaps on hippocampus dataset in 4-folds cross validation setting:
+### Dice Coefficient of 3D-UCaps on hippocampus dataset in 4-folds cross-validation:
 
 |       | Anterior | Posterior | Average | Pretrained model |
 |-------|:--------:|:---------:|:-------:|------------------|
@@ -43,7 +43,7 @@ Details of the UCaps model architecture and experimental results can be found in
 | **Mean** | **85.73** | **83.77** | **84.75** |        |
 | Paper | 85.07 | 82.49 | 83.78 | |
 
-### Result of 3D-UCaps on cardiac dataset in 4-folds cross validation setting:
+### Result of 3D-UCaps on the cardiac dataset in 4-folds cross-validation:
 
 |       | Recall | Precision | Dice | Pretrained model |
 |-------|:------:|:---------:|:----:|------------------|
@@ -57,7 +57,7 @@ Details of the UCaps model architecture and experimental results can be found in
 ## Usage
 
 ### Installation
-We provide instructions how to install dependencies via conda. First, clone the repository locally:
+We provide instructions on how to install dependencies via conda. First, clone the repository locally:
 ```
 git clone https://github.com/VinAIResearch/3D-UCaps.git
 ```
@@ -94,7 +94,7 @@ path/to/luna/
   segs
 ```
 
-**Note**: there are some files in LUNA16 dataset can lead to error when training so we have removed it:
+**Note**: there are some files in LUNA16 dataset can lead to an error when training so we have removed it:
 ```
 1.3.6.1.4.1.14519.5.2.1.6279.6001.771741891125176943862272696845.mhd
 1.3.6.1.4.1.14519.5.2.1.6279.6001.927394449308471452920270961822.mhd
@@ -116,7 +116,7 @@ Arguments for training can be divided into 3 groups:
    * `cache_rate` and `cache_dir` define whether you want to use [CacheDataset](https://docs.monai.io/en/latest/data.html?highlight=ThreadBuffer#cachedataset) or [PersistentDataset](https://docs.monai.io/en/latest/data.html?highlight=ThreadBuffer#persistentdataset) when loading data.
    * `num_samples` is a arg in [RandCropByPosNegLabel](https://docs.monai.io/en/latest/transforms.html#randcropbyposneglabel) method, the effective batch size is `batch_size` x `num_samples`.
 
-The full list of arguments can be show through command:
+The full list of arguments can be shown through the command:
 ```
 python train.py -h
 ```
@@ -133,7 +133,7 @@ Arguments for validation can be divided into 3 groups:
 2. Args for [sliding window inference](https://docs.monai.io/en/latest/inferers.html#sliding-window-inference) method
 3. Args specific for validation `root_dir`, `output_dir`, `save_image`, `model_name`, `dataset`, `fold`, `checkpoint_path`
 
-The full list of arguments can be show through command:
+The full list of arguments can be shown through the command:
 ```
 python evaluate.py -h
 ```
@@ -146,7 +146,7 @@ bash scripts/evaluate_ucaps_iseg.sh
 ### Rotation experiment
 Same with validation but add two more arguments `rotate_angle` (in degree) and `axis` (z/y/x or all) to create test rotated subject.
 
-The full list of arguments can be show through command:
+The full list of arguments can be shown through the command:
 ```
 python evaluate_iseg.py -h
 ```
@@ -165,5 +165,5 @@ bash scripts/evaluate_rotation.sh 0 z
 python val.py --gpu 1 --sw_batch_size 32 --overlap 0.75 --output_dir=/home/ubuntu/
 ```
 
-## Acknowlegement
-The implementation of dynamic routing algorithm and capsule layers were based on the tensorflow build of CapsNet by its authors in this [link](https://github.com/Sarasra/models/tree/master/research/capsules)
+## Acknowledgement
+The implementation of dynamic routing algorithm and capsule layers were based on the Tensorflow build of CapsNet by its authors in this [link](https://github.com/Sarasra/models/tree/master/research/capsules)
