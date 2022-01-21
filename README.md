@@ -140,7 +140,7 @@ python val.py --gpu 1 --sw_batch_size 32 --overlap 0.75 --output_dir=/home/ubunt
 
 | Model | CSF | GM | WM | Average | Pretrained model |
 |-------|:---:|:---:|:---:|:-----:|------------------|
-| 3D-UCaps | **95.01** | **91.51** | 90.59 | **92.37** | [download](https://drive.google.com/file/d/1mjMsMUltTikw8HW2IwRqG5s9pEsmwKVo/view?usp=sharing) |
+| 3D-UCaps | **95.01** | **91.51** | 90.59 | **92.37** | [download](https://drive.google.com/file/d/15VZ_Zw_0hxknK3xEbkAr8hsDCDKp5nKi/view?usp=sharing) |
 | Paper | 94.21 | 91.34 | **90.95** | 92.17 | |
 
 ### Dice Coefficient of 3D-UCaps on hippocampus dataset in 4-folds cross-validation:
